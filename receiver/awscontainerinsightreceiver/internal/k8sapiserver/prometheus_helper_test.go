@@ -1,3 +1,17 @@
+// Copyright The OpenTelemetry Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package k8sapiserver
 
 import (
@@ -8,13 +22,10 @@ import (
 	"net/url"
 	"sync"
 	"sync/atomic"
-	"testing"
 
 	gokitlog "github.com/go-kit/log"
 	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/scrape"
-	"go.opentelemetry.io/collector/pdata/pcommon"
-	"go.opentelemetry.io/collector/pdata/pmetric"
 	"gopkg.in/yaml.v2"
 )
 
@@ -32,13 +43,8 @@ type mockPrometheus struct {
 	srv         *httptest.Server
 }
 type testData struct {
-	name            string
-	relabeledJob    string // Used when relabeling or honor_labels changes the target to something other than 'name'.
-	pages           []mockPrometheusResponse
-	attributes      pcommon.Map
-	validateScrapes bool
-	normalizedName  bool
-	validateFunc    func(t *testing.T, td *testData, result []pmetric.ResourceMetrics)
+	name  string
+	pages []mockPrometheusResponse
 }
 
 func (mp *mockPrometheus) Close() {

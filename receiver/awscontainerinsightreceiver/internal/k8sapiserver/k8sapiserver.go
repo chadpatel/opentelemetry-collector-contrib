@@ -272,8 +272,8 @@ func (k *K8sAPIServer) init() error {
 
 	// TODO: this is example code for running the scrape client.  It needs to be protected by leader electiongit
 	/*store := stores.NewPrometheusStore(k.logger, &map[string]float64{})
-	metricScrape, _ := NewMetricScrape(clientSet.CoreV1().RESTClient().Get().URL().Host, k.logger, &store)
-	metricScrape.Run()*/
+	MetricScrape, _ := NewMetricScrape(clientSet.CoreV1().RESTClient().Get().URL().Host, k.logger, &store)
+	MetricScrape.Run()*/
 
 	return nil
 }

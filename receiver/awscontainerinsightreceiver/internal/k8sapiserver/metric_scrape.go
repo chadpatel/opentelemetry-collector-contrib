@@ -1,8 +1,21 @@
+// Copyright The OpenTelemetry Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package k8sapiserver
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	gokitLog "github.com/go-kit/log"
@@ -10,6 +23,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"go.uber.org/zap"
@@ -19,12 +33,12 @@ import (
 
 const (
 	collectionEndpoint = "/metrics"
-	bearerTokenPath    = "/var/run/secrets/kubernetes.io/serviceaccount/token"
-	collectionInterval = 15 * time.Second // TODO:
-	collectionTimeout  = 7 * time.Second  // TODO
+	bearerTokenPath    = "/var/run/secrets/kubernetes.io/serviceaccount/token" // #nosec
+	collectionInterval = 15 * time.Second                                      // TODO:
+	collectionTimeout  = 7 * time.Second                                       // TODO
 )
 
-type metricScrape struct {
+type MetricScrape struct {
 	scrapeManager    *scrape.Manager
 	discoveryManager *discovery.Manager
 	logger           *zap.Logger
@@ -35,7 +49,7 @@ type metricScrape struct {
 	context          context.Context
 }
 
-func NewMetricScrape(host string, logger *zap.Logger, store *storage.Appendable) (*metricScrape, error) {
+func NewMetricScrape(host string, logger *zap.Logger, store *storage.Appendable) (*MetricScrape, error) {
 	// TODO
 	/* 2023-05-16T18:00:47.956Z        debug   scrape/scrape.go:1351   Scrape failed   {"kind": "receiver", "name": "awscontainerinsightreceiver", "data_type": "metrics", "scrape_pool": "k8sapiserver", "target": "https://ip-192-168-71-146.us-east-2.compute.internal:443/metrics", "error": "Get \"https://ip-192-168-71-146.us-east-2.compute.internal:443/metrics\": unable to read authorization credentials file /var/Run/secrets/kubernetes.io/serviceaccount/token: open /var/Run/secrets/kubernetes.io/serviceaccount/token: no such file or directory"}
 	 */
@@ -64,7 +78,7 @@ func NewMetricScrape(host string, logger *zap.Logger, store *storage.Appendable)
 
 				ServiceDiscoveryConfigs: discovery.Configs{
 					discovery.StaticConfig{
-						{
+						&targetgroup.Group{
 							Targets: []model.LabelSet{
 								{model.AddressLabel: model.LabelValue(host)},
 							},
@@ -79,7 +93,7 @@ func NewMetricScrape(host string, logger *zap.Logger, store *storage.Appendable)
 	// the prometheus scraper library uses gokit logging, we must adapt our zap logger to gokit
 	gokitlogger := logging.NewZapToGokitLogAdapter(logger)
 
-	ms := metricScrape{
+	ms := MetricScrape{
 		logger:      logger,
 		gokitlogger: gokitlogger,
 		store:       store,
@@ -94,18 +108,26 @@ func NewMetricScrape(host string, logger *zap.Logger, store *storage.Appendable)
 	return &ms, nil
 }
 
-func (ms *metricScrape) Run() {
-	ms.scrapeManager.ApplyConfig(ms.config)
+func (ms *MetricScrape) Run() error {
+	err := ms.scrapeManager.ApplyConfig(ms.config)
+	if err != nil {
+		return err
+	}
 
 	discoveryConfigs := make(map[string]discovery.Configs)
 	discoveryConfigs["k8sapiserver"] = ms.config.ScrapeConfigs[0].ServiceDiscoveryConfigs
-	ms.discoveryManager.ApplyConfig(discoveryConfigs)
+	err = ms.discoveryManager.ApplyConfig(discoveryConfigs)
+	if err != nil {
+		return err
+	}
 
 	go ms.runDiscoveryManager()
 	go ms.runScrapeManager()
+
+	return nil
 }
 
-func (ms *metricScrape) Shutdown(context.Context) error {
+func (ms *MetricScrape) Shutdown(context.Context) error {
 	if ms.cancel != nil {
 		ms.cancel()
 	}
@@ -115,7 +137,7 @@ func (ms *metricScrape) Shutdown(context.Context) error {
 	return nil
 }
 
-func (ms *metricScrape) runDiscoveryManager() {
+func (ms *MetricScrape) runDiscoveryManager() {
 	ms.logger.Info("Starting k8sapiserver prometheus metrics discovery manager")
 	if err := ms.discoveryManager.Run(); err != nil {
 		ms.logger.Error("Discovery manager failed", zap.Error(err))
@@ -124,13 +146,13 @@ func (ms *metricScrape) runDiscoveryManager() {
 
 	select {
 	case <-ms.context.Done():
-		ms.logger.Info(fmt.Sprintf("Stopping k8sapiserver prometheus metrics discovery manager"))
+		ms.logger.Info("Stopping k8sapiserver prometheus metrics discovery manager")
 		return
 	default:
 	}
 }
 
-func (ms *metricScrape) runScrapeManager() {
+func (ms *MetricScrape) runScrapeManager() {
 	// The scrape manager needs to wait for the configuration to be loaded before beginning
 	// TODO <-r.configLoaded
 	// TODO: is there anything to do here?
@@ -142,7 +164,7 @@ func (ms *metricScrape) runScrapeManager() {
 
 	select {
 	case <-ms.context.Done():
-		ms.logger.Info(fmt.Sprintf("Stopping k8sapiserver prometheus metrics scrape manager"))
+		ms.logger.Info("Stopping k8sapiserver prometheus metrics scrape manager")
 		return
 	default:
 	}
