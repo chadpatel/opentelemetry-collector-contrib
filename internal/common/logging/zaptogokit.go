@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package logging // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/prometheusreceiver/internal"
+package logging // import "github.com/open-telemetry/opentelemetry-collector-contrib/internal/common/logging"
 
 import (
 	gokitLog "github.com/go-kit/log"
