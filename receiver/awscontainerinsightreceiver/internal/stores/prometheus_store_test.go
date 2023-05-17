@@ -16,6 +16,7 @@ package stores
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -29,7 +30,8 @@ import (
 
 func TestPrometheusStore(t *testing.T) {
 	storage := map[string]float64{}
-	store := NewPrometheusStore(zap.NewNop(), &storage)
+	lock := sync.Mutex{}
+	store := NewPrometheusStore(zap.NewNop(), &storage, &lock)
 	ctx := context.TODO()
 
 	myAppender := store.Appender(ctx)
@@ -39,12 +41,14 @@ func TestPrometheusStore(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Zero(t, response)
 
+	lock.Lock()
+	defer lock.Unlock()
 	assert.Equal(t, 1234.5, storage["{__name__=\"myLabel\"}"])
 }
 
 func TestAppendNoMetricName(t *testing.T) {
 	storage := map[string]float64{}
-	store := NewPrometheusStore(zap.NewNop(), &storage)
+	store := NewPrometheusStore(zap.NewNop(), &storage, &sync.Mutex{})
 	ctx := context.TODO()
 
 	myAppender := store.Appender(ctx)
@@ -57,7 +61,7 @@ func TestAppendNoMetricName(t *testing.T) {
 
 func TestNoOpMethods(t *testing.T) {
 	storage := map[string]float64{}
-	store := NewPrometheusStore(zap.NewNop(), &storage)
+	store := NewPrometheusStore(zap.NewNop(), &storage, &sync.Mutex{})
 	ctx := context.TODO()
 
 	myAppender := store.Appender(ctx)

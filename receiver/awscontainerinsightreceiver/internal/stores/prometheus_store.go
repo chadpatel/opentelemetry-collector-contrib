@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"sync"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -42,13 +43,15 @@ type PrometheusStore struct {
 type appender struct {
 	logger  *zap.Logger
 	storage map[string]float64
+	lock    *sync.Mutex // temporary, to protect storage
 }
 
-func NewPrometheusStore(logger *zap.Logger, storage *map[string]float64) storage.Appendable {
+func NewPrometheusStore(logger *zap.Logger, storage *map[string]float64, lock *sync.Mutex) storage.Appendable {
 	return &PrometheusStore{
 		appender: appender{
 			logger:  logger,
 			storage: *storage,
+			lock:    lock,
 		},
 		logger: logger,
 	}
@@ -73,6 +76,8 @@ func (a appender) Append(ref storage.SeriesRef, labels labels.Labels, atMs int64
 	}
 
 	// TODO: update this to a reasonable storage mechanism
+	a.lock.Lock()
+	defer a.lock.Unlock()
 	a.storage[temporaryString(labels)] = value
 
 	return 0, nil

@@ -15,6 +15,7 @@
 package k8sapiserver
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -26,7 +27,8 @@ import (
 func TestNewMetricScrape(t *testing.T) {
 	logger := zap.NewNop()
 	storage := map[string]float64{}
-	store := stores.NewPrometheusStore(logger, &storage)
+	lock := sync.Mutex{}
+	store := stores.NewPrometheusStore(logger, &storage, &lock)
 
 	ms, err := NewMetricScrape("host_name", logger, &store)
 	assert.NoError(t, err)
@@ -36,7 +38,8 @@ func TestNewMetricScrape(t *testing.T) {
 func TestMetricScrapeRun(t *testing.T) {
 	logger := zap.NewNop()
 	storage := map[string]float64{}
-	store := stores.NewPrometheusStore(logger, &storage)
+	lock := sync.Mutex{}
+	store := stores.NewPrometheusStore(logger, &storage, &lock)
 
 	var renameMetric = `
 # HELP http_go_threads Number of OS threads created
@@ -90,6 +93,8 @@ rpc_duration_total{method="post",port="6381"} 120.0
 	}
 
 	// metrics
+	lock.Lock()
+	defer lock.Unlock()
 	assert.Equal(t, float64(10), storage["{__name__=\"redis_http_requests_total\", job=\"k8sapiserver\", method=\"post\", port=\"6380\"}"])
 
 	// metadata
