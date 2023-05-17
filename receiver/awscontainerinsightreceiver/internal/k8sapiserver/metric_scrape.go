@@ -32,10 +32,11 @@ import (
 )
 
 const (
-	collectionEndpoint = "/metrics"
-	bearerTokenPath    = "/var/run/secrets/kubernetes.io/serviceaccount/token" // #nosec
-	collectionInterval = 60 * time.Second                                      // TODO: configure via YAML?
-	collectionTimeout  = 30 * time.Second                                      // TODO: configure via YAML?
+	collectionEndpoint       = "/metrics"
+	bearerTokenPath          = "/var/run/secrets/kubernetes.io/serviceaccount/token" // #nosec
+	certificateAuthorityPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+	collectionInterval       = 60 * time.Second // TODO: configure via YAML?
+	collectionTimeout        = 30 * time.Second // TODO: configure via YAML?
 )
 
 type MetricScrape struct {
@@ -70,7 +71,7 @@ func NewMetricScrape(host string, logger *zap.Logger, store *storage.Appendable)
 
 				HTTPClientConfig: httpconfig.HTTPClientConfig{
 					TLSConfig: httpconfig.TLSConfig{
-						CAFile: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt",
+						CAFile: certificateAuthorityPath,
 					},
 					BearerTokenFile: bearerTokenPath,
 					FollowRedirects: true,
