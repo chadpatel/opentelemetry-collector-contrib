@@ -70,7 +70,7 @@ func NewMetricScrape(host string, logger *zap.Logger, store *storage.Appendable)
 
 				HTTPClientConfig: httpconfig.HTTPClientConfig{
 					TLSConfig: httpconfig.TLSConfig{
-						InsecureSkipVerify: true,
+						CAFile: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt",
 					},
 					BearerTokenFile: bearerTokenPath,
 					FollowRedirects: true,
