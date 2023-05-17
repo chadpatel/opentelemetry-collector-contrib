@@ -15,7 +15,6 @@
 package k8sapiserver
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -67,7 +66,6 @@ rpc_duration_total{method="post",port="6381"} 120.0
 			},
 		},
 	}
-	ctx := context.Background()
 	mp, cfg, err := setupMockPrometheus(targets...)
 	assert.NoError(t, err)
 	assert.NotNil(t, mp)
@@ -82,7 +80,7 @@ rpc_duration_total{method="post",port="6381"} 120.0
 
 	t.Cleanup(func() {
 		assert.Len(t, ms.scrapeManager.TargetsActive(), len(targets))
-		assert.NoError(t, ms.Shutdown(ctx))
+		assert.NoError(t, ms.Shutdown(ms.context))
 		assert.Len(t, flattenTargets(ms.scrapeManager.TargetsActive()), 0)
 	})
 

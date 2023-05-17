@@ -231,6 +231,7 @@ func (k *K8sAPIServer) init() error {
 	}
 
 	clientSet := k.k8sClient.GetClientSet()
+
 	configMapInterface := clientSet.CoreV1().ConfigMaps(lockNamespace)
 	if configMap, err := configMapInterface.Get(ctx, k.leaderLockName, metav1.GetOptions{}); configMap == nil || err != nil {
 		k.logger.Info(fmt.Sprintf("Cannot get the leader config map: %v, try to create the config map...", err))
@@ -270,7 +271,7 @@ func (k *K8sAPIServer) init() error {
 
 	go k.startLeaderElection(ctx, lock)
 
-	// TODO: this is example code for running the scrape client.  It needs to be protected by leader electiongit
+	// TODO: this is example code for running the scrape client.  It needs to be protected by leader election
 	/*store := stores.NewPrometheusStore(k.logger, &map[string]float64{})
 	MetricScrape, _ := NewMetricScrape(clientSet.CoreV1().RESTClient().Get().URL().Host, k.logger, &store)
 	MetricScrape.Run()*/

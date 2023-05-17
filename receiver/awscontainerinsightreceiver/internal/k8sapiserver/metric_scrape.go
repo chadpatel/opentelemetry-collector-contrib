@@ -34,8 +34,8 @@ import (
 const (
 	collectionEndpoint = "/metrics"
 	bearerTokenPath    = "/var/run/secrets/kubernetes.io/serviceaccount/token" // #nosec
-	collectionInterval = 15 * time.Second                                      // TODO:
-	collectionTimeout  = 7 * time.Second                                       // TODO
+	collectionInterval = 60 * time.Second                                      // TODO: configure via YAML?
+	collectionTimeout  = 30 * time.Second                                      // TODO: configure via YAML?
 )
 
 type MetricScrape struct {
