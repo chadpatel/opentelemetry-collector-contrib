@@ -1,3 +1,17 @@
+// Copyright The OpenTelemetry Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package k8sapiserver // import "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/awscontainerinsightreceiver/internal/k8sapiserver"
 
 import (
@@ -24,6 +38,7 @@ var (
 		"apiserver_request_duration_seconds":                        controlPlaneResourceType,
 		"apiserver_admission_controller_admission_duration_seconds": controlPlaneResourceType,
 		"rest_client_request_duration_seconds":                      controlPlaneResourceType,
+		"rest_client_requests_total":                                controlPlaneResourceType,
 		"etcd_request_duration_seconds":                             controlPlaneResourceType,
 		"etcd_db_total_size_in_bytes":                               controlPlaneResourceType,
 	}
@@ -39,8 +54,8 @@ type prometheusConsumer struct {
 	metricsToResource map[string]string
 }
 
-func newPrometheusConsumer(logger *zap.Logger, nextConsumer consumer.Metrics, clusterName string, nodeName string) prometheusConsumer {
-	return prometheusConsumer{
+func newPrometheusConsumer(logger *zap.Logger, nextConsumer consumer.Metrics, clusterName string, nodeName string) *prometheusConsumer {
+	return &prometheusConsumer{
 		logger:            logger,
 		nextConsumer:      nextConsumer,
 		clusterName:       clusterName,
