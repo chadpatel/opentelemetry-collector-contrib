@@ -21,7 +21,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/simpleprometheusreceiver"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/config/configtls"
@@ -29,6 +28,7 @@ import (
 	"go.opentelemetry.io/collector/receiver"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/aws/k8s/k8sclient"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/simpleprometheusreceiver"
 )
 
 const (
@@ -95,10 +95,10 @@ func NewPrometheusScraper(ctx context.Context, telemetrySettings component.Telem
 	}, nil
 }
 
-func (ps *PrometheusScraper) Start() {
-	ps.simplePrometheusReceiver.Start(ps.ctx, ps.host)
+func (ps *PrometheusScraper) Start() error {
+	return ps.simplePrometheusReceiver.Start(ps.ctx, ps.host)
 }
 
-func (ps *PrometheusScraper) Shutdown() {
-	ps.simplePrometheusReceiver.Shutdown(ps.ctx)
+func (ps *PrometheusScraper) Shutdown() error {
+	return ps.simplePrometheusReceiver.Shutdown(ps.ctx)
 }

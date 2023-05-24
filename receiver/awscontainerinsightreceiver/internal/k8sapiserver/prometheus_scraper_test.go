@@ -20,7 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/simpleprometheusreceiver"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/component/componenttest"
 	"go.opentelemetry.io/collector/config/confighttp"
@@ -29,6 +28,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/receiver"
 	"go.uber.org/zap"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/simpleprometheusreceiver"
 )
 
 const renameMetric = `
@@ -108,6 +109,7 @@ func TestNewPrometheusScraperEndToEnd(t *testing.T) {
 		},
 	}
 	mp, cfg, err := setupMockPrometheus(targets...)
+	assert.NoError(t, err)
 
 	split := strings.Split(mp.srv.URL, "http://")
 
@@ -133,10 +135,10 @@ func TestNewPrometheusScraperEndToEnd(t *testing.T) {
 	assert.NotNil(t, mp)
 	defer mp.Close()
 
-	scraper.Start()
+	assert.NoError(t, scraper.Start())
 
 	t.Cleanup(func() {
-		scraper.Shutdown()
+		assert.NoError(t, scraper.Shutdown())
 	})
 
 	// wait for scrape
