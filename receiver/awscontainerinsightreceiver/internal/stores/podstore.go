@@ -22,7 +22,6 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -116,9 +115,8 @@ type podClient interface {
 }
 
 type PodStore struct {
-	cache *mapWithExpiry
-	// preMeasurements per each Type (Pod, Container, etc)
-	prevMeasurements          sync.Map // map[string]*mapWithExpiry
+	cache                     *mapWithExpiry
+	prevMeasurements          map[string]*mapWithExpiry // preMeasurements per each Type (Pod, Container, etc)
 	podClient                 podClient
 	k8sClient                 replicaSetInfoProvider
 	lastRefreshed             time.Time
@@ -126,10 +124,9 @@ type PodStore struct {
 	prefFullPodName           bool
 	logger                    *zap.Logger
 	addFullPodNameMetricLabel bool
-	includeEnhancedMetrics    bool
 }
 
-func NewPodStore(hostIP string, prefFullPodName bool, addFullPodNameMetricLabel bool, includeEnhancedMetrics bool, logger *zap.Logger) (*PodStore, error) {
+func NewPodStore(hostIP string, prefFullPodName bool, addFullPodNameMetricLabel bool, logger *zap.Logger) (*PodStore, error) {
 	podClient, err := kubeletutil.NewKubeletClient(hostIP, ci.KubeSecurePort, logger)
 	if err != nil {
 		return nil, err
@@ -154,13 +151,11 @@ func NewPodStore(hostIP string, prefFullPodName bool, addFullPodNameMetricLabel 
 	}
 
 	podStore := &PodStore{
-		cache:            newMapWithExpiry(podsExpiry),
-		prevMeasurements: sync.Map{},
-		//prevMeasurements:          make(map[string]*mapWithExpiry),
+		cache:                     newMapWithExpiry(podsExpiry),
+		prevMeasurements:          make(map[string]*mapWithExpiry),
 		podClient:                 podClient,
 		nodeInfo:                  newNodeInfo(nodeName, k8sClient.GetNodeClient(), logger),
 		prefFullPodName:           prefFullPodName,
-		includeEnhancedMetrics:    includeEnhancedMetrics,
 		k8sClient:                 k8sClient,
 		logger:                    logger,
 		addFullPodNameMetricLabel: addFullPodNameMetricLabel,
@@ -170,12 +165,12 @@ func NewPodStore(hostIP string, prefFullPodName bool, addFullPodNameMetricLabel 
 }
 
 func (p *PodStore) getPrevMeasurement(metricType, metricKey string) (interface{}, bool) {
-	prevMeasurement, ok := p.prevMeasurements.Load(metricType)
+	prevMeasurement, ok := p.prevMeasurements[metricType]
 	if !ok {
 		return nil, false
 	}
 
-	content, ok := prevMeasurement.(*mapWithExpiry).Get(metricKey)
+	content, ok := prevMeasurement.Get(metricKey)
 
 	if !ok {
 		return nil, false
@@ -185,12 +180,12 @@ func (p *PodStore) getPrevMeasurement(metricType, metricKey string) (interface{}
 }
 
 func (p *PodStore) setPrevMeasurement(metricType, metricKey string, content interface{}) {
-	prevMeasurement, ok := p.prevMeasurements.Load(metricType)
+	prevMeasurement, ok := p.prevMeasurements[metricType]
 	if !ok {
 		prevMeasurement = newMapWithExpiry(measurementsExpiry)
-		p.prevMeasurements.Store(metricType, prevMeasurement)
+		p.prevMeasurements[metricType] = prevMeasurement
 	}
-	prevMeasurement.(*mapWithExpiry).Set(metricKey, content)
+	prevMeasurement.Set(metricKey, content)
 }
 
 // RefreshTick triggers refreshing of the pod store.
@@ -274,11 +269,9 @@ func (p *PodStore) refresh(ctx context.Context, now time.Time) {
 }
 
 func (p *PodStore) cleanup(now time.Time) {
-	p.prevMeasurements.Range(
-		func(key, prevMeasurement interface{}) bool {
-			prevMeasurement.(*mapWithExpiry).CleanUp(now)
-			return true
-		})
+	for _, prevMeasurement := range p.prevMeasurements {
+		prevMeasurement.CleanUp(now)
+	}
 	p.cache.CleanUp(now)
 }
 
@@ -347,28 +340,26 @@ func (p *PodStore) decorateNode(metric CIMetric) {
 	metric.AddField(ci.MetricName(ci.TypeNode, ci.RunningPodCount), nodeStats.podCnt)
 	metric.AddField(ci.MetricName(ci.TypeNode, ci.RunningContainerCount), nodeStats.containerCnt)
 
-	if p.includeEnhancedMetrics {
-		if nodeStatusCapacityPods, ok := p.nodeInfo.getNodeStatusCapacityPods(); ok {
-			metric.AddField(ci.MetricName(ci.TypeNode, ci.StatusCapacityPods), nodeStatusCapacityPods)
-		}
-		if nodeStatusAllocatablePods, ok := p.nodeInfo.getNodeStatusAllocatablePods(); ok {
-			metric.AddField(ci.MetricName(ci.TypeNode, ci.StatusAllocatablePods), nodeStatusAllocatablePods)
-		}
-		if nodeStatusConditionReady, ok := p.nodeInfo.getNodeStatusCondition(corev1.NodeReady); ok {
-			metric.AddField(ci.MetricName(ci.TypeNode, ci.StatusConditionReady), nodeStatusConditionReady)
-		}
-		if nodeStatusConditionDiskPressure, ok := p.nodeInfo.getNodeStatusCondition(corev1.NodeDiskPressure); ok {
-			metric.AddField(ci.MetricName(ci.TypeNode, ci.StatusConditionDiskPressure), nodeStatusConditionDiskPressure)
-		}
-		if nodeStatusConditionMemoryPressure, ok := p.nodeInfo.getNodeStatusCondition(corev1.NodeMemoryPressure); ok {
-			metric.AddField(ci.MetricName(ci.TypeNode, ci.StatusConditionMemoryPressure), nodeStatusConditionMemoryPressure)
-		}
-		if nodeStatusConditionPIDPressure, ok := p.nodeInfo.getNodeStatusCondition(corev1.NodePIDPressure); ok {
-			metric.AddField(ci.MetricName(ci.TypeNode, ci.StatusConditionPIDPressure), nodeStatusConditionPIDPressure)
-		}
-		if nodeStatusConditionNetworkUnavailable, ok := p.nodeInfo.getNodeStatusCondition(corev1.NodeNetworkUnavailable); ok {
-			metric.AddField(ci.MetricName(ci.TypeNode, ci.StatusConditionNetworkUnavailable), nodeStatusConditionNetworkUnavailable)
-		}
+	if nodeStatusCapacityPods, ok := p.nodeInfo.getNodeStatusCapacityPods(); ok {
+		metric.AddField(ci.MetricName(ci.TypeNode, ci.StatusCapacityPods), nodeStatusCapacityPods)
+	}
+	if nodeStatusAllocatablePods, ok := p.nodeInfo.getNodeStatusAllocatablePods(); ok {
+		metric.AddField(ci.MetricName(ci.TypeNode, ci.StatusAllocatablePods), nodeStatusAllocatablePods)
+	}
+	if nodeStatusConditionReady, ok := p.nodeInfo.getNodeStatusCondition(corev1.NodeReady); ok {
+		metric.AddField(ci.MetricName(ci.TypeNode, ci.StatusConditionReady), nodeStatusConditionReady)
+	}
+	if nodeStatusConditionDiskPressure, ok := p.nodeInfo.getNodeStatusCondition(corev1.NodeDiskPressure); ok {
+		metric.AddField(ci.MetricName(ci.TypeNode, ci.StatusConditionDiskPressure), nodeStatusConditionDiskPressure)
+	}
+	if nodeStatusConditionMemoryPressure, ok := p.nodeInfo.getNodeStatusCondition(corev1.NodeMemoryPressure); ok {
+		metric.AddField(ci.MetricName(ci.TypeNode, ci.StatusConditionMemoryPressure), nodeStatusConditionMemoryPressure)
+	}
+	if nodeStatusConditionPIDPressure, ok := p.nodeInfo.getNodeStatusCondition(corev1.NodePIDPressure); ok {
+		metric.AddField(ci.MetricName(ci.TypeNode, ci.StatusConditionPIDPressure), nodeStatusConditionPIDPressure)
+	}
+	if nodeStatusConditionNetworkUnavailable, ok := p.nodeInfo.getNodeStatusCondition(corev1.NodeNetworkUnavailable); ok {
+		metric.AddField(ci.MetricName(ci.TypeNode, ci.StatusConditionNetworkUnavailable), nodeStatusConditionNetworkUnavailable)
 	}
 }
 
@@ -405,9 +396,7 @@ func (p *PodStore) decorateCPU(metric CIMetric, pod *corev1.Pod) {
 					if containerSpec.Name == containerName {
 						if containerCPULimit, ok := getLimitForContainer(cpuKey, containerSpec); ok {
 							metric.AddField(ci.MetricName(ci.TypeContainer, ci.CPULimit), containerCPULimit)
-							if p.includeEnhancedMetrics {
-								metric.AddField(ci.MetricName(ci.TypeContainer, ci.CPUUtilizationOverContainerLimit), containerCPUTotal.(float64)/float64(containerCPULimit)*100)
-							}
+							metric.AddField(ci.MetricName(ci.TypeContainer, ci.CPUUtilizationOverContainerLimit), containerCPUTotal.(float64)/float64(containerCPULimit)*100)
 						}
 						if containerCPUReq, ok := getRequestForContainer(cpuKey, containerSpec); ok {
 							metric.AddField(ci.MetricName(ci.TypeContainer, ci.CPURequest), containerCPUReq)
@@ -454,9 +443,7 @@ func (p *PodStore) decorateMem(metric CIMetric, pod *corev1.Pod) {
 					if containerSpec.Name == containerName {
 						if containerMemLimit, ok := getLimitForContainer(memoryKey, containerSpec); ok {
 							metric.AddField(ci.MetricName(ci.TypeContainer, ci.MemLimit), containerMemLimit)
-							if p.includeEnhancedMetrics {
-								metric.AddField(ci.MetricName(ci.TypeContainer, ci.MemUtilizationOverContainerLimit), float64(containerMemWorkingset.(uint64))/float64(containerMemLimit)*100)
-							}
+							metric.AddField(ci.MetricName(ci.TypeContainer, ci.MemUtilizationOverContainerLimit), float64(containerMemWorkingset.(uint64))/float64(containerMemLimit)*100)
 						}
 						if containerMemReq, ok := getRequestForContainer(memoryKey, containerSpec); ok {
 							metric.AddField(ci.MetricName(ci.TypeContainer, ci.MemRequest), containerMemReq)
@@ -471,11 +458,8 @@ func (p *PodStore) decorateMem(metric CIMetric, pod *corev1.Pod) {
 func (p *PodStore) addStatus(metric CIMetric, pod *corev1.Pod) {
 	if metric.GetTag(ci.MetricType) == ci.TypePod {
 		metric.AddTag(ci.PodStatus, string(pod.Status.Phase))
-
-		if p.includeEnhancedMetrics {
-			p.addPodStatusMetrics(metric, pod)
-			p.addPodConditionMetrics(metric, pod)
-		}
+		p.addPodStatusMetrics(metric, pod)
+		p.addPodConditionMetrics(metric, pod)
 
 		var curContainerRestarts int
 		for _, containerStatus := range pod.Status.ContainerStatuses {
@@ -543,10 +527,8 @@ func (p *PodStore) addStatus(metric CIMetric, pod *corev1.Pod) {
 					}
 
 					// add container containerStatus metrics
-					if p.includeEnhancedMetrics {
-						for name, val := range possibleStatuses {
-							metric.AddField(ci.MetricName(ci.TypeContainer, name), val)
-						}
+					for name, val := range possibleStatuses {
+						metric.AddField(ci.MetricName(ci.TypeContainer, name), val)
 					}
 				}
 			}

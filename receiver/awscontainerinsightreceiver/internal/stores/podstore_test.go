@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sync"
 	"testing"
 	"time"
 
@@ -205,7 +204,7 @@ func getPodStore() *PodStore {
 	return &PodStore{
 		cache:            newMapWithExpiry(time.Minute),
 		nodeInfo:         nodeInfo,
-		prevMeasurements: sync.Map{},
+		prevMeasurements: make(map[string]*mapWithExpiry),
 		logger:           zap.NewNop(),
 	}
 }
@@ -244,11 +243,6 @@ func TestPodStore_decorateCpu(t *testing.T) {
 	assert.Equal(t, uint64(10), metric.GetField("container_cpu_request").(uint64))
 	assert.Equal(t, uint64(10), metric.GetField("container_cpu_limit").(uint64))
 	assert.Equal(t, float64(1), metric.GetField("container_cpu_usage_total").(float64))
-	assert.False(t, metric.HasField("container_cpu_utilization_over_container_limit"))
-
-	podStore.includeEnhancedMetrics = true
-	podStore.decorateCPU(metric, pod)
-
 	assert.Equal(t, float64(10), metric.GetField("container_cpu_utilization_over_container_limit").(float64))
 }
 
@@ -277,11 +271,6 @@ func TestPodStore_decorateMem(t *testing.T) {
 	assert.Equal(t, uint64(52428800), metric.GetField("container_memory_request").(uint64))
 	assert.Equal(t, uint64(52428800), metric.GetField("container_memory_limit").(uint64))
 	assert.Equal(t, uint64(10*1024*1024), metric.GetField("container_memory_working_set").(uint64))
-	assert.False(t, metric.HasField("container_memory_utilization_over_container_limit"))
-
-	podStore.includeEnhancedMetrics = true
-	podStore.decorateMem(metric, pod)
-
 	assert.Equal(t, float64(20), metric.GetField("container_memory_utilization_over_container_limit").(float64))
 }
 
@@ -295,17 +284,13 @@ func TestPodStore_previousCleanupLocking(t *testing.T) {
 	fields := map[string]interface{}{ci.MetricName(ci.TypePod, ci.CPUTotal): float64(1)}
 	metric := generateMetric(fields, tags)
 
-	quit := make(chan bool)
+	running := true
+
 	go func() {
-		for {
-			select {
-			case <-quit:
-				return
-			default:
-				// manipulate last refreshed so that we are always forcing a refresh
-				podStore.lastRefreshed = time.Now().Add(-1 * time.Hour)
-				podStore.RefreshTick(ctx)
-			}
+		for running {
+			// manipulate last refreshed so that we are always forcing a refresh
+			podStore.lastRefreshed = time.Now().Add(-1 * time.Hour)
+			podStore.RefreshTick(ctx)
 		}
 	}()
 
@@ -313,8 +298,8 @@ func TestPodStore_previousCleanupLocking(t *testing.T) {
 		// status metrics push things to the previous list
 		podStore.addStatus(metric, pod)
 	}
+	running = false
 
-	quit <- true
 	// this test would crash without proper locking
 }
 
@@ -349,18 +334,9 @@ const (
 	PodInitializedMetricName = "pod_status_initialized"
 )
 
-func TestPodStore_enhanced_metrics_disabled(t *testing.T) {
-	decoratedResultMetric := runAddStatusToGetDecoratedCIMetric("./test_resources/pod_in_phase_failed.json", false)
-
-	assert.False(t, decoratedResultMetric.HasField(PodFailedMetricName))
-	assert.False(t, decoratedResultMetric.HasField(PodPendingMetricName))
-	assert.False(t, decoratedResultMetric.HasField(PodRunningMetricName))
-	assert.False(t, decoratedResultMetric.HasField(PodSucceededMetricName))
-	assert.False(t, decoratedResultMetric.HasField(PodUnknownMetricName))
-}
-
 func TestPodStore_addStatus_adds_pod_failed_metric(t *testing.T) {
-	decoratedResultMetric := runAddStatusToGetDecoratedCIMetric("./test_resources/pod_in_phase_failed.json", true)
+	decoratedResultMetric := runAddStatusToGetDecoratedCIMetric(
+		"./test_resources/pod_in_phase_failed.json")
 
 	assert.Equal(t, 1, decoratedResultMetric.GetField(PodFailedMetricName))
 	assert.Equal(t, 0, decoratedResultMetric.GetField(PodPendingMetricName))
@@ -370,7 +346,8 @@ func TestPodStore_addStatus_adds_pod_failed_metric(t *testing.T) {
 }
 
 func TestPodStore_addStatus_adds_pod_pending_metric(t *testing.T) {
-	decoratedResultMetric := runAddStatusToGetDecoratedCIMetric("./test_resources/pod_in_phase_pending.json", true)
+	decoratedResultMetric := runAddStatusToGetDecoratedCIMetric(
+		"./test_resources/pod_in_phase_pending.json")
 
 	assert.Equal(t, 0, decoratedResultMetric.GetField(PodFailedMetricName))
 	assert.Equal(t, 1, decoratedResultMetric.GetField(PodPendingMetricName))
@@ -380,7 +357,8 @@ func TestPodStore_addStatus_adds_pod_pending_metric(t *testing.T) {
 }
 
 func TestPodStore_addStatus_adds_pod_running_metric(t *testing.T) {
-	decoratedResultMetric := runAddStatusToGetDecoratedCIMetric("./test_resources/pod_in_phase_running.json", true)
+	decoratedResultMetric := runAddStatusToGetDecoratedCIMetric(
+		"./test_resources/pod_in_phase_running.json")
 
 	assert.Equal(t, 0, decoratedResultMetric.GetField(PodFailedMetricName))
 	assert.Equal(t, 0, decoratedResultMetric.GetField(PodPendingMetricName))
@@ -390,7 +368,8 @@ func TestPodStore_addStatus_adds_pod_running_metric(t *testing.T) {
 }
 
 func TestPodStore_addStatus_adds_pod_succeeded_metric(t *testing.T) {
-	decoratedResultMetric := runAddStatusToGetDecoratedCIMetric("./test_resources/pod_in_phase_succeeded.json", true)
+	decoratedResultMetric := runAddStatusToGetDecoratedCIMetric(
+		"./test_resources/pod_in_phase_succeeded.json")
 
 	assert.Equal(t, 0, decoratedResultMetric.GetField(PodFailedMetricName))
 	assert.Equal(t, 0, decoratedResultMetric.GetField(PodPendingMetricName))
@@ -400,7 +379,8 @@ func TestPodStore_addStatus_adds_pod_succeeded_metric(t *testing.T) {
 }
 
 func TestPodStore_addStatus_adds_pod_unknown_metric(t *testing.T) {
-	decoratedResultMetric := runAddStatusToGetDecoratedCIMetric("./test_resources/pod_in_phase_unknown.json", true)
+	decoratedResultMetric := runAddStatusToGetDecoratedCIMetric(
+		"./test_resources/pod_in_phase_unknown.json")
 
 	assert.Equal(t, 0, decoratedResultMetric.GetField(PodFailedMetricName))
 	assert.Equal(t, 0, decoratedResultMetric.GetField(PodPendingMetricName))
@@ -409,16 +389,9 @@ func TestPodStore_addStatus_adds_pod_unknown_metric(t *testing.T) {
 	assert.Equal(t, 1, decoratedResultMetric.GetField(PodUnknownMetricName))
 }
 
-func TestPodStore_addStatus_enhanced_metrics_disabled(t *testing.T) {
-	decoratedResultMetric := runAddStatusToGetDecoratedCIMetric("./test_resources/all_pod_conditions_valid.json", false)
-
-	assert.False(t, decoratedResultMetric.HasField(PodInitializedMetricName))
-	assert.False(t, decoratedResultMetric.HasField(PodReadyMetricName))
-	assert.False(t, decoratedResultMetric.HasField(PodScheduledMetricName))
-}
-
 func TestPodStore_addStatus_adds_all_pod_conditions_as_metrics_when_true_false_unknown(t *testing.T) {
-	decoratedResultMetric := runAddStatusToGetDecoratedCIMetric("./test_resources/all_pod_conditions_valid.json", true)
+	decoratedResultMetric := runAddStatusToGetDecoratedCIMetric(
+		"./test_resources/all_pod_conditions_valid.json")
 
 	assert.Equal(t, 1, decoratedResultMetric.GetField(PodInitializedMetricName))
 	assert.Equal(t, 0, decoratedResultMetric.GetField(PodReadyMetricName))
@@ -426,19 +399,19 @@ func TestPodStore_addStatus_adds_all_pod_conditions_as_metrics_when_true_false_u
 }
 
 func TestPodStore_addStatus_adds_all_pod_conditions_as_metrics_when_unexpected(t *testing.T) {
-	decoratedResultMetric := runAddStatusToGetDecoratedCIMetric("./test_resources/one_pod_condition_invalid.json", true)
+	decoratedResultMetric := runAddStatusToGetDecoratedCIMetric(
+		"./test_resources/one_pod_condition_invalid.json")
 
 	assert.Equal(t, 0, decoratedResultMetric.GetField(PodInitializedMetricName))
 	assert.Equal(t, 1, decoratedResultMetric.GetField(PodReadyMetricName))
 	assert.Equal(t, 1, decoratedResultMetric.GetField(PodScheduledMetricName))
 }
 
-func TestPodStore_addStatus_enhanced_metrics(t *testing.T) {
+func TestPodStore_addStatus(t *testing.T) {
 	pod := getBaseTestPodInfo()
 	tags := map[string]string{ci.MetricType: ci.TypePod, ci.K8sNamespace: "default", ci.K8sPodNameKey: "cpu-limit"}
 	fields := map[string]interface{}{ci.MetricName(ci.TypePod, ci.CPUTotal): float64(1)}
 	podStore := getPodStore()
-	podStore.includeEnhancedMetrics = true
 	metric := generateMetric(fields, tags)
 
 	podStore.addStatus(metric, pod)
@@ -499,86 +472,6 @@ func TestPodStore_addStatus_enhanced_metrics(t *testing.T) {
 	assert.Equal(t, "Waiting", metric.GetTag(ci.ContainerStatus))
 	assert.Equal(t, 1, metric.GetField(ci.MetricName(ci.TypeContainer, ci.StatusWaiting)))
 	assert.Equal(t, 0, metric.GetField(ci.MetricName(ci.TypeContainer, ci.StatusWaitingReasonCrashed)))
-
-	// test delta of restartCount
-	pod.Status.ContainerStatuses[0].RestartCount = 3
-	tags = map[string]string{ci.MetricType: ci.TypePod, ci.K8sNamespace: "default", ci.K8sPodNameKey: "cpu-limit"}
-	metric = generateMetric(fields, tags)
-
-	podStore.addStatus(metric, pod)
-	assert.Equal(t, int(2), metric.GetField(ci.MetricName(ci.TypePod, ci.ContainerRestartCount)).(int))
-
-	tags = map[string]string{ci.MetricType: ci.TypeContainer, ci.K8sNamespace: "default", ci.K8sPodNameKey: "cpu-limit", ci.ContainerNamekey: "ubuntu"}
-	metric = generateMetric(fields, tags)
-
-	podStore.addStatus(metric, pod)
-	assert.Equal(t, int(2), metric.GetField(ci.ContainerRestartCount).(int))
-}
-
-func TestPodStore_addStatus_without_enhanced_metrics(t *testing.T) {
-	pod := getBaseTestPodInfo()
-	tags := map[string]string{ci.MetricType: ci.TypePod, ci.K8sNamespace: "default", ci.K8sPodNameKey: "cpu-limit"}
-	fields := map[string]interface{}{ci.MetricName(ci.TypePod, ci.CPUTotal): float64(1)}
-	podStore := getPodStore()
-	podStore.includeEnhancedMetrics = false
-	metric := generateMetric(fields, tags)
-
-	podStore.addStatus(metric, pod)
-	assert.Equal(t, "Running", metric.GetTag(ci.PodStatus))
-	val := metric.GetField(ci.MetricName(ci.TypePod, ci.ContainerRestartCount))
-	assert.Nil(t, val)
-
-	tags = map[string]string{ci.MetricType: ci.TypeContainer, ci.K8sNamespace: "default", ci.K8sPodNameKey: "cpu-limit", ci.ContainerNamekey: "ubuntu"}
-	metric = generateMetric(fields, tags)
-
-	podStore.addStatus(metric, pod)
-	assert.Equal(t, "Running", metric.GetTag(ci.ContainerStatus))
-	val = metric.GetField(ci.ContainerRestartCount)
-	assert.Nil(t, val)
-	assert.False(t, metric.HasField(ci.MetricName(ci.TypeContainer, ci.StatusRunning)))
-
-	pod.Status.ContainerStatuses[0].State.Running = nil
-	pod.Status.ContainerStatuses[0].State.Terminated = &corev1.ContainerStateTerminated{}
-	pod.Status.ContainerStatuses[0].LastTerminationState.Terminated = &corev1.ContainerStateTerminated{Reason: "OOMKilled"}
-	pod.Status.ContainerStatuses[0].RestartCount = 1
-	pod.Status.Phase = "Succeeded"
-
-	tags = map[string]string{ci.MetricType: ci.TypePod, ci.K8sNamespace: "default", ci.K8sPodNameKey: "cpu-limit"}
-	metric = generateMetric(fields, tags)
-
-	podStore.addStatus(metric, pod)
-	assert.Equal(t, "Succeeded", metric.GetTag(ci.PodStatus))
-	assert.Equal(t, int(1), metric.GetField(ci.MetricName(ci.TypePod, ci.ContainerRestartCount)).(int))
-
-	tags = map[string]string{ci.MetricType: ci.TypeContainer, ci.K8sNamespace: "default", ci.K8sPodNameKey: "cpu-limit", ci.ContainerNamekey: "ubuntu"}
-	metric = generateMetric(fields, tags)
-
-	podStore.addStatus(metric, pod)
-	assert.Equal(t, "Terminated", metric.GetTag(ci.ContainerStatus))
-	assert.Equal(t, "OOMKilled", metric.GetTag(ci.ContainerLastTerminationReason))
-	assert.Equal(t, int(1), metric.GetField(ci.ContainerRestartCount).(int))
-	assert.False(t, metric.HasField(ci.MetricName(ci.TypeContainer, ci.StatusTerminated)))
-
-	pod.Status.ContainerStatuses[0].State.Terminated = nil
-	pod.Status.ContainerStatuses[0].State.Waiting = &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}
-
-	tags = map[string]string{ci.MetricType: ci.TypeContainer, ci.K8sNamespace: "default", ci.K8sPodNameKey: "cpu-limit", ci.ContainerNamekey: "ubuntu"}
-	metric = generateMetric(fields, tags)
-
-	podStore.addStatus(metric, pod)
-	assert.Equal(t, "Waiting", metric.GetTag(ci.ContainerStatus))
-	assert.False(t, metric.HasField(ci.MetricName(ci.TypeContainer, ci.StatusWaiting)))
-	assert.False(t, metric.HasField(ci.MetricName(ci.TypeContainer, ci.StatusWaitingReasonCrashed)))
-
-	pod.Status.ContainerStatuses[0].State.Waiting = &corev1.ContainerStateWaiting{Reason: "SomeOtherReason"}
-
-	tags = map[string]string{ci.MetricType: ci.TypeContainer, ci.K8sNamespace: "default", ci.K8sPodNameKey: "cpu-limit", ci.ContainerNamekey: "ubuntu"}
-	metric = generateMetric(fields, tags)
-
-	podStore.addStatus(metric, pod)
-	assert.Equal(t, "Waiting", metric.GetTag(ci.ContainerStatus))
-	assert.False(t, metric.HasField(ci.MetricName(ci.TypeContainer, ci.StatusWaiting)))
-	assert.False(t, metric.HasField(ci.MetricName(ci.TypeContainer, ci.StatusWaitingReasonCrashed)))
 
 	// test delta of restartCount
 	pod.Status.ContainerStatuses[0].RestartCount = 3
@@ -879,18 +772,6 @@ func TestPodStore_decorateNode(t *testing.T) {
 	assert.Equal(t, int(1), metric.GetField("node_number_of_running_containers").(int))
 	assert.Equal(t, int(1), metric.GetField("node_number_of_running_pods").(int))
 
-	assert.False(t, metric.HasField("node_status_condition_ready"))
-	assert.False(t, metric.HasField("node_status_condition_disk_pressure"))
-	assert.False(t, metric.HasField("node_status_condition_memory_pressure"))
-	assert.False(t, metric.HasField("node_status_condition_pid_pressure"))
-	assert.False(t, metric.HasField("node_status_condition_network_unavailable"))
-
-	assert.False(t, metric.HasField("node_status_capacity_pods"))
-	assert.False(t, metric.HasField("node_status_allocatable_pods"))
-
-	podStore.includeEnhancedMetrics = true
-	podStore.decorateNode(metric)
-
 	assert.Equal(t, uint64(1), metric.GetField("node_status_condition_ready").(uint64))
 	assert.Equal(t, uint64(0), metric.GetField("node_status_condition_disk_pressure").(uint64))
 	assert.Equal(t, uint64(0), metric.GetField("node_status_condition_memory_pressure").(uint64))
@@ -950,10 +831,9 @@ func TestPodStore_Decorate(t *testing.T) {
 	assert.False(t, ok)
 }
 
-func runAddStatusToGetDecoratedCIMetric(podInfoSourceFileName string, includeEnhancedMetrics bool) CIMetric {
+func runAddStatusToGetDecoratedCIMetric(podInfoSourceFileName string) CIMetric {
 	podInfo := generatePodInfo(podInfoSourceFileName)
 	podStore := getPodStore()
-	podStore.includeEnhancedMetrics = includeEnhancedMetrics
 	rawCIMetric := generateRawCIMetric()
 	podStore.addStatus(rawCIMetric, podInfo)
 	return rawCIMetric

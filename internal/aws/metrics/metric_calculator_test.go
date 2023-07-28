@@ -143,7 +143,7 @@ func TestMapWithExpiryConcurrency(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
-		for i := 0; i < 1000; i++ {
+		for i := 0; i < 30; i++ {
 			sum, _ := store.Get(Key{MetricMetadata: "sum"})
 			newSum := MetricValue{
 				RawValue: sum.RawValue.(int) + 1,
@@ -154,7 +154,7 @@ func TestMapWithExpiryConcurrency(t *testing.T) {
 	}()
 
 	go func() {
-		for i := 0; i < 1000; i++ {
+		for i := 0; i < 30; i++ {
 			sum, _ := store.Get(Key{MetricMetadata: "sum"})
 			newSum := MetricValue{
 				RawValue: sum.RawValue.(int) - 1,
@@ -164,9 +164,8 @@ func TestMapWithExpiryConcurrency(t *testing.T) {
 		wg.Done()
 	}()
 	wg.Wait()
-
-	// the objective of this test is to verify the program will not crash,
-	// the values cannot be safely or predictably be incremented/decremented without a atomic increment/decrement methods
+	sum, _ := store.Get(Key{MetricMetadata: "sum"})
+	assert.Equal(t, 0, sum.RawValue.(int))
 }
 
 type mockKey struct {
