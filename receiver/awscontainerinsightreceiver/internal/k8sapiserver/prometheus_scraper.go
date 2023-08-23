@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -118,8 +117,7 @@ func NewPrometheusScraper(opts PrometheusScraperOpts) (*PrometheusScraper, error
 							"ClusterName":      model.LabelValue(opts.ClusterNameProvider.GetClusterName()),
 							"Version":          model.LabelValue("0"),
 							"Sources":          model.LabelValue("[\"apiserver\"]"),
-							"NodeName":         model.LabelValue(os.Getenv("HOST_NAME")),
-							"Type":             model.LabelValue("control_plane"),
+							"Type":             model.LabelValue("ControlPlane"),
 						},
 					},
 				},
