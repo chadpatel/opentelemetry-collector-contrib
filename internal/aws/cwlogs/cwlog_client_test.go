@@ -635,7 +635,7 @@ func TestUserAgent(t *testing.T) {
 			component.BuildInfo{Command: "opentelemetry-collector-contrib", Version: "1.0"},
 			"/aws/containerinsights/eks-cluster-name/performance",
 			true,
-			"opentelemetry-collector-contrib/1.0 (EnhancedEKSContainerInsights)",
+			"opentelemetry-collector-contrib/1.0 (ContainerInsights)",
 		},
 		{
 			"negative - enhanced container insights ECS",
