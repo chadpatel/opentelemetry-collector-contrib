@@ -200,5 +200,6 @@ func wrapErrorIfBadRequest(err error) error {
 }
 
 func isEnhancedContainerInsights(config *Config) bool {
-	return config.EnhancedContainerInsights && !config.DisableMetricExtraction
+	return false // temporarily disable
+	// return config.EnhancedContainerInsights && !config.DisableMetricExtraction
 }
