@@ -88,6 +88,10 @@ func NewKueuePrometheusScraper(opts KueuePrometheusScraperOpts) (*KueuePrometheu
 			TLSConfig: configutil.TLSConfig{
 				InsecureSkipVerify: true,
 			},
+			Authorization: &configutil.Authorization{
+				Type:            "Bearer",
+				CredentialsFile: "/var/run/secrets/kubernetes.io/serviceaccount/token",
+			},
 		},
 		ScrapeInterval:  model.Duration(kmCollectionInterval),
 		ScrapeTimeout:   model.Duration(kmCollectionInterval),
@@ -112,12 +116,6 @@ func NewKueuePrometheusScraper(opts KueuePrometheusScraperOpts) (*KueuePrometheu
 			},
 		},
 		MetricRelabelConfigs: GetKueueRelabelConfigs(opts.ClusterName),
-	}
-
-	if opts.BearerToken != "" {
-		scrapeConfig.HTTPClientConfig.BearerToken = configutil.Secret(opts.BearerToken)
-	} else {
-		opts.TelemetrySettings.Logger.Warn("bearer token is not set, kueue metrics will not be published")
 	}
 
 	promConfig := prometheusreceiver.Config{

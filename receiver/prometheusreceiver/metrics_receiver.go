@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"regexp"
 	"sync"
@@ -97,7 +98,7 @@ func (r *pReceiver) Start(ctx context.Context, host component.Host) error {
 	return nil
 }
 
-func (r *pReceiver) initPrometheusComponents(ctx context.Context, logger log.Logger) error {
+func (r *pReceiver) initPrometheusComponents(ctx context.Context, _ log.Logger) error {
 	// Some SD mechanisms use the "refresh" package, which has its own metrics.
 	refreshSdMetrics := discovery.NewRefreshMetrics(r.registerer)
 
@@ -106,7 +107,8 @@ func (r *pReceiver) initPrometheusComponents(ctx context.Context, logger log.Log
 	if err != nil {
 		return fmt.Errorf("failed to register service discovery metrics: %w", err)
 	}
-	r.discoveryManager = discovery.NewManager(ctx, logger, r.registerer, sdMetrics)
+	slogLogger := slog.Default()
+	r.discoveryManager = discovery.NewManager(ctx, slogLogger, r.registerer, sdMetrics)
 	if r.discoveryManager == nil {
 		// NewManager can sometimes return nil if it encountered an error, but
 		// the error message is logged separately.
@@ -117,7 +119,6 @@ func (r *pReceiver) initPrometheusComponents(ctx context.Context, logger log.Log
 		r.settings.Logger.Info("Starting discovery manager")
 		if err = r.discoveryManager.Run(); err != nil && !errors.Is(err, context.Canceled) {
 			r.settings.Logger.Error("Discovery manager failed", zap.Error(err))
-			r.settings.TelemetrySettings.ReportStatus(component.NewFatalErrorEvent(err))
 		}
 	}()
 
@@ -161,7 +162,7 @@ func (r *pReceiver) initPrometheusComponents(ctx context.Context, logger log.Log
 			Set(reflect.ValueOf(true))
 	}
 
-	scrapeManager, err := scrape.NewManager(opts, logger, store, r.registerer)
+	scrapeManager, err := scrape.NewManager(opts, slogLogger, nil, store, r.registerer)
 	if err != nil {
 		return err
 	}
@@ -182,7 +183,6 @@ func (r *pReceiver) initPrometheusComponents(ctx context.Context, logger log.Log
 		r.settings.Logger.Info("Starting scrape manager")
 		if err := r.scrapeManager.Run(r.discoveryManager.SyncCh()); err != nil {
 			r.settings.Logger.Error("Scrape manager failed", zap.Error(err))
-			r.settings.TelemetrySettings.ReportStatus(component.NewFatalErrorEvent(err))
 		}
 	}()
 	return nil
